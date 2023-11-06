@@ -13,6 +13,7 @@ import * as User from "../model/User";
 import * as QuickTokens from "../controller/QuickTokens";
 import Commander from '../model/Commander';
 import * as jsonrpc from '../tools/jsonrpc';
+import * as DeviceManager from "../DeviceManager";
 
 app.use([
     log4js.connectLogger(logger, {
@@ -105,6 +106,29 @@ app.get<{ method: string }>("/rpc/:method", (req, res) => {
         const error_code = err.error_code || jsonrpc.ERROR_CODES.SERVER_ERROR;
         res.status(400).json(jsonrpc.buildOutgoingJsonRpcError(error_code, null)).end()
     });
+})
+
+app.post("/rpc", (req, res) => {
+    const data = req.body;
+    let shellies = [];
+    if (typeof data.dst === 'string') {
+        shellies.push(data.dst)
+    } else if (typeof data.dst === 'object' && Array.isArray(data.dst)) {
+        shellies = data.dst;
+    }
+
+    for (const dst of data.dst) if (typeof dst === 'string') {
+        const shellyID = dst;
+        const shelly = DeviceManager.getDevice(shellyID);
+        if (shelly == undefined) {
+            res.status(400).json(jsonrpc.buildOutgoingJsonRpcError(jsonrpc.ERROR_CODES.INVALID_REQUEST, data.id, undefined, "No such device")).end()
+        }
+        shelly?.shellyRPC(data.method, data.params, (resp) => {
+            resp.dst = data.src;
+            resp.id = data.id;
+            res.status(200).json(resp).end();
+        }, true)
+    }
 })
 
 app.post<{ method: string}>("/rpc/:method", isLoggedIn, (req, res) => {
